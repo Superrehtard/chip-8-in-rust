@@ -9,6 +9,7 @@ fn main() {
     let mut sound_timer: u8 = 0;
 
     let mut keys = [false; 16]; // Array to represent the state of the 16 keys
+    let mut i_register: u16 = 0; // Index register
 
     let mut stack: Vec<usize> = Vec::new(); // Stack to store return addresses
                                             // Define where the program should start
@@ -40,11 +41,12 @@ fn main() {
             &mut pc,
             &mut registers,
             &mut stack,
-            &memory,
+            &mut memory,
             &mut display,
             &keys,
             &mut delay_timer,
             &mut sound_timer,
+            &mut i_register,
         );
 
         // Stop execution if we jump past the program or hit invalid memory
@@ -76,11 +78,12 @@ fn decode_and_execute(
     pc: &mut usize,
     registers: &mut [u8; 16],
     stack: &mut Vec<usize>,
-    memory: &[u8; 4096],
+    memory: &mut [u8; 4096],
     display: &mut [[u8; 64]; 32],
     keys: &[bool; 16], // Array to represent the state of the 16 keys
     delay_timer: &mut u8,
     sound_timer: &mut u8,
+    i_register: &mut u16,
 ) {
     match opcode & 0xF000 {
         0x0000 => {
@@ -382,6 +385,66 @@ fn decode_and_execute(
                     // FX18: Set sound timer = Vx
                     println!("Set sound timer = V[{:X}]", x);
                     *sound_timer = registers[x];
+                    *pc += 2;
+                }
+                0x001E => {
+                    // FX1E: Set I = I + Vx
+                    println!("Set I = I + V[{:X}]", x);
+                    *i_register += registers[x] as u16;
+                    *pc += 2;
+                }
+                0x0029 => {
+                    // FX29: Set I = location of sprite for digit Vx
+                    let digit = registers[x] as u16 & 0xF; // Only the last 4 bits are used
+                    *i_register = digit * 5; // Each sprite is 5 bytes long (is it?)
+                    println!(
+                        "Set I = location of sprite for digit {}; I = 0x{:04X}",
+                        digit, *i_register
+                    );
+                    *pc += 2;
+                }
+                0x0033 => {
+                    // FX33: Store BCD representation of Vx in memory locations I, I+1, I+2
+                    let value = registers[x];
+                    let hundreds = value / 100;
+                    let tens = (value / 10) % 10;
+                    let ones = value % 10;
+                    memory[*i_register as usize] = hundreds;
+                    memory[*i_register as usize + 1] = tens;
+                    memory[*i_register as usize + 2] = ones;
+                    println!(
+                        "Stored BCD of V[{:X}] ({}): [{}, {}, {}] at I = 0x{:04X}",
+                        x,
+                        value,
+                        hundreds,
+                        tens,
+                        ones,
+                        *i_register
+                    );
+                    *pc += 2;
+                }
+                0x0055 => {
+                    // FX55: Store registers V0 through VX in memory starting at I
+                    for reg in 0..=x {
+                        memory[(*i_register as usize) + reg] = registers[reg];
+                    }
+                    println!(
+                        "Stored registers V0 through V[{:X}] in memory starting at I = 0x{:04X}",
+                        x,
+                        *i_register
+                    );
+                    *pc += 2;
+                }
+                0x0065 => {
+                    // FX65: Read registers V0 through VX from memory starting at I
+                    for reg in 0..=x {
+                        registers[reg] = memory[(*i_register as usize) + reg];
+                    }
+                    println!(
+                        "Read registers V0 through V[{:X}] from memory starting at I = 0x{:04X}",
+                        x,
+                        *i_register
+                    );
                     *pc += 2;
                 }
                 _ => {
