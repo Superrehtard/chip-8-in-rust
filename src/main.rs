@@ -1,61 +1,79 @@
+use std::{fs::File, io::Read};
+
+mod chip8;
+mod cpu;
+mod memory;
+
 fn main() {
-    // Simulate 4KB of memory as an array of 4096 bytes
-    let mut memory: [u8; 4096] = [0; 4096];
-    let mut registers = [0u8; 16];
-    let mut display = [[0u8; 64]; 32]; // 32x64 monochrome display
+    let mut file = File::open("data/INVADERS").unwrap();
+    let mut data = Vec::<u8>::new();
+    let _ = file.read_to_end(&mut data);
 
-    // Timers
-    let mut delay_timer: u8 = 0;
-    let mut sound_timer: u8 = 0;
+    let mut chip8 = chip8::Chip8::new();
+    chip8.load_program(&data);
 
-    let mut keys = [false; 16]; // Array to represent the state of the 16 keys
-    let mut i_register: u16 = 0; // Index register
-
-    let mut stack: Vec<usize> = Vec::new(); // Stack to store return addresses
-                                            // Define where the program should start
-    let program_start: usize = 0x200;
-
-    // Example: A small "program" to load into memory
-    let program: [u8; 8] = [
-        0x12, 0x02, // An example Chip-8 opcode (not real)
-        0x22, 0x04, // Another example opcode
-        0x61, 0x23, // Another imaginary opcode for chip-8
-        0x71, 0x34, // Yet another imaginary opcode
-    ];
-
-    keys[5] = true; // Simulate key press
-
-    // Load the program into memory starting at 0x200
-    for (i, &byte) in program.iter().enumerate() {
-        memory[program_start + i] = byte;
-    }
-
-    // Fetch the first opcode from memory
-    let mut pc: usize = program_start; // Program counter starts at 0x200
-
-    while pc < memory.len() {
-        let opcode = fetch_opcode(&memory, pc);
-        println!("Fetched opcode at 0x{:04X}: 0x{:04X}", pc, opcode);
-        decode_and_execute(
-            opcode,
-            &mut pc,
-            &mut registers,
-            &mut stack,
-            &mut memory,
-            &mut display,
-            &keys,
-            &mut delay_timer,
-            &mut sound_timer,
-            &mut i_register,
-        );
-
-        // Stop execution if we jump past the program or hit invalid memory
-        if pc >= program_start + program.len() {
-            println!("Execution stopped: PC out of bounds.");
+    loop {
+        if !chip8.decode_and_execute() {
             break;
         }
     }
-    println!("Final Registers: {:?}", registers);
+    // // Simulate 4KB of memory as an array of 4096 bytes
+    // let mut memory = Memory::new();
+    // let mut registers = [0u8; 16];
+    // let mut display = [[0u8; 64]; 32]; // 32x64 monochrome display
+
+    // // Timers
+    // let mut delay_timer: u8 = 0;
+    // let mut sound_timer: u8 = 0;
+
+    // let mut keys = [false; 16]; // Array to represent the state of the 16 keys
+    // let mut i_register: u16 = 0; // Index register
+
+    // let mut stack: Vec<usize> = Vec::new(); // Stack to store return addresses
+    //                                         // Define where the program should start
+    // let program_start: usize = 0x200;
+
+    // // Example: A small "program" to load into memory
+    // let program: [u8; 8] = [
+    //     0x12, 0x02, // An example Chip-8 opcode (not real)
+    //     0x22, 0x04, // Another example opcode
+    //     0x61, 0x23, // Another imaginary opcode for chip-8
+    //     0x71, 0x34, // Yet another imaginary opcode
+    // ];
+
+    // keys[5] = true; // Simulate key press
+
+    // // Load the program into memory starting at 0x200
+    // for (i, &byte) in program.iter().enumerate() {
+    //     memory[program_start + i] = byte;
+    // }
+
+    // // Fetch the first opcode from memory
+    // let mut pc: usize = program_start; // Program counter starts at 0x200
+
+    // while pc < memory.len() {
+    //     let opcode = fetch_opcode(&memory, pc);
+    //     println!("Fetched opcode at 0x{:04X}: 0x{:04X}", pc, opcode);
+    //     decode_and_execute(
+    //         opcode,
+    //         &mut pc,
+    //         &mut registers,
+    //         &mut stack,
+    //         &mut memory,
+    //         &mut display,
+    //         &keys,
+    //         &mut delay_timer,
+    //         &mut sound_timer,
+    //         &mut i_register,
+    //     );
+
+    //     // Stop execution if we jump past the program or hit invalid memory
+    //     if pc >= program_start + program.len() {
+    //         println!("Execution stopped: PC out of bounds.");
+    //         break;
+    //     }
+    // }
+    // println!("Final Registers: {:?}", registers);
 }
 
 fn fetch_opcode(memory: &[u8; 4096], pc: usize) -> u16 {
@@ -414,12 +432,7 @@ fn decode_and_execute(
                     memory[*i_register as usize + 2] = ones;
                     println!(
                         "Stored BCD of V[{:X}] ({}): [{}, {}, {}] at I = 0x{:04X}",
-                        x,
-                        value,
-                        hundreds,
-                        tens,
-                        ones,
-                        *i_register
+                        x, value, hundreds, tens, ones, *i_register
                     );
                     *pc += 2;
                 }
@@ -430,8 +443,7 @@ fn decode_and_execute(
                     }
                     println!(
                         "Stored registers V0 through V[{:X}] in memory starting at I = 0x{:04X}",
-                        x,
-                        *i_register
+                        x, *i_register
                     );
                     *pc += 2;
                 }
@@ -442,8 +454,7 @@ fn decode_and_execute(
                     }
                     println!(
                         "Read registers V0 through V[{:X}] from memory starting at I = 0x{:04X}",
-                        x,
-                        *i_register
+                        x, *i_register
                     );
                     *pc += 2;
                 }
