@@ -7,6 +7,8 @@ pub struct Cpu {
     return_stack: Vec<u16>,
     pc: u16,
     i_register: u16,
+    display: [[u8; 64]; 32],
+    keys: [bool; 16],
 }
 
 impl Cpu {
@@ -16,6 +18,8 @@ impl Cpu {
             return_stack: Vec::new(),
             pc: PROGRAM_START,
             i_register: 0,
+            display: [[0; 64]; 32],
+            keys: [false; 16],
         }
     }
 
@@ -37,24 +41,39 @@ impl Cpu {
         self.registers[register]
     }
 
-    pub fn debug_draw_sprites(&self, vx: u8, vy: u8, height: u8, memory: &mut Memory) {
-        println!(
-            "Drawing sprite at V[{:X}], V[{:X}] with height {}",
-            vx, vy, height
-        );
-        for y in 0..height {
-            let mut sprite = memory.read_byte(self.i_register as usize + y as usize);
-            for _ in 0..8 {
-                match (sprite & 0b10000000) >> 7 {
-                    0 => print!("."),
-                    1 => print!("*"),
-                    _ => unreachable!(),
-                }
-                sprite <<= 1;
-            }
-            println!()
+    pub fn clear_display(&mut self) {
+        for row in self.display.iter_mut() {
+            row.fill(0);
         }
-        print!("\n");
+    }
+
+    pub fn set_key(&mut self, key: usize, pressed: bool) {
+        self.keys[key] = pressed;
+    }
+
+    pub fn draw_sprite(&mut self, vx: u8, vy: u8, height: u8, memory: &Memory) -> bool {
+        let x = vx as usize;
+        let y = vy as usize;
+        let mut collision = false;
+
+        for byte in 0..height {
+            let sprite = memory.read_byte(self.i_register as usize + byte as usize);
+            for bit in 0..8 {
+                let pixel = (sprite >> (7 - bit)) & 1;
+                if pixel == 1 {
+                    let display_x = (x + bit) % 64;
+                    let display_y = (y + byte as usize) % 32;
+                    if self.display[display_y][display_x] == 1 {
+                        collision = true;
+                    }
+                    self.display[display_y][display_x] ^= 1;
+                    print!("{} ", self.display[display_y][display_x]);
+                }
+            }
+            println!();
+        }
+
+        collision
     }
 
     pub fn decode_and_execute(&mut self, memory: &mut Memory) -> bool {
@@ -75,7 +94,8 @@ impl Cpu {
                 match opcode & 0x00FF {
                     0x00E0 => {
                         // 00E0: Clear the display
-                        println!("Clear the display (ignored for now)");
+                        self.clear_display();
+                        self.pc += 2;
                     }
                     0x00EE => {
                         // 00EE: Return from subroutine
@@ -290,10 +310,11 @@ impl Cpu {
             }
             0xD000 => {
                 // DXYN: Draw a sprite at coordinate (VX, VY) with width 8 and height N
-                let x = ((opcode & 0x0F00) >> 8) as u8;
-                let y = ((opcode & 0x00F0) >> 4) as u8;
+                let x = self.registers[((opcode & 0x0F00) >> 8) as usize];
+                let y = self.registers[((opcode & 0x00F0) >> 4) as usize];
                 let height = (opcode & 0x000F) as u8;
-                self.debug_draw_sprites(x, y, height as u8, memory);
+                let collision = self.draw_sprite(x, y, height, memory);
+                self.registers[0xF] = if collision { 1 } else { 0 };
                 self.pc += 2;
             }
             0xE000 => {
@@ -301,33 +322,20 @@ impl Cpu {
                     0x009E => {
                         // EX9E: Skip next instruction if key with the value of Vx is pressed
                         let x = (opcode & 0x0F00) >> 8;
-                        println!("Skip next instruction if key V[{:X}] is pressed", x);
-                        let key = self.registers[x as usize] as usize;
-
-                        println!("Key pressed: V[{:X}] = 0x{:02X}", x, key);
-                        // Ignoring this opcode for now
-
-                        // if keys[key] {
-                        //     *pc += 4; // skip next instruction
-                        // } else {
-                        //     *pc += 2;
-                        // }
+                        if self.keys[self.registers[x as usize] as usize] {
+                            self.pc += 4;
+                        } else {
+                            self.pc += 2;
+                        }
                     }
                     0x00A1 => {
                         // EXA1: Skip next instruction if key with the value of Vx is not pressed
                         let x = (opcode & 0x0F00) >> 8;
-                        println!("Skip next instruction if key V[{:X}] is not pressed", x);
-                        // Ignoring this opcode for now
-                        let key = self.registers[x as usize] as usize;
-
-                        println!("Key not pressed: V[{:X}] = 0x{:02X}", x, key);
-                        // Ignoring this opcode for now
-
-                        // if !keys[key] {
-                        //     *pc += 4; // skip next instruction
-                        // } else {
-                        //     *pc += 2;
-                        // }
+                        if !self.keys[self.registers[x as usize] as usize] {
+                            self.pc += 4;
+                        } else {
+                            self.pc += 2;
+                        }
                     }
                     _ => {
                         println!("Unknown opcode: 0x{:04X}", opcode);
